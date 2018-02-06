@@ -29,31 +29,25 @@ import com.spotify.flo.TaskInfo;
 import com.spotify.flo.freezer.Persisted;
 import com.spotify.flo.status.TaskStatusException;
 import java.io.IOException;
-import org.apache.commons.lang.time.DurationFormatUtils;
+import org.apache.commons.lang3.time.DurationFormatUtils;
 import org.fusesource.jansi.AnsiConsole;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/**
- * {@code
- * 0         1         2         3         4         5         6         7
- * 012345678901234567890123456789012345678901234567890123456789012345678901234
- * 16:47:42.258 flo-worker-1                 | DEBUG| LockHolder           |> | 74
- * 16:48:18.805 | INFO | EvalContext         |> | 45
- * }
- */
 class ConsoleLogging implements Logging {
 
   private static final Logger LOG = LoggerFactory.getLogger("com.spotify.flo.context.FloRunner");
 
   @Override
   public void init() {
-    AnsiConsole.systemInstall();
+    // jansi seems to work better without install/uninstall :/
+    // AnsiConsole.systemInstall();
   }
 
   @Override
   public void close() throws IOException {
-    AnsiConsole.systemUninstall();
+    // jansi seems to work better without install/uninstall :/
+    // AnsiConsole.systemUninstall();
     // TODO: find out what the print below does
     AnsiConsole.out.print(ansi().a("\u001B[?25h"));
     AnsiConsole.out.flush();
@@ -80,8 +74,7 @@ class ConsoleLogging implements Logging {
   public void failedValue(TaskId taskId, Throwable valueError) {
     if (valueError instanceof TaskStatusException) {
       final String exception = valueError.getClass().getSimpleName();
-      final int code = ((TaskStatusException) valueError).code();
-      LOG.warn("{} Signalled {} -> {}", colored(taskId), exception, code);
+      LOG.warn("{} Signalled {}", colored(taskId), exception);
     } else if (valueError instanceof Persisted) {
       // ignore
     } else {
@@ -97,9 +90,7 @@ class ConsoleLogging implements Logging {
   @Override
   public void exception(Throwable throwable) {
     if (throwable instanceof TaskStatusException) {
-      LOG.warn("Could not complete run: {} (code {})",
-               throwable.getClass().getSimpleName(),
-               ((TaskStatusException) throwable).code());
+      LOG.warn("Could not complete run: {}", throwable.getClass().getSimpleName());
     } else if (throwable instanceof Persisted) {
       // ignore
     } else {
