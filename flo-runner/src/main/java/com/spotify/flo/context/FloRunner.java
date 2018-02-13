@@ -20,8 +20,6 @@
 
 package com.spotify.flo.context;
 
-import static com.spotify.flo.EvalContext.async;
-import static com.spotify.flo.EvalContext.sync;
 import static java.lang.System.getProperty;
 import static java.util.Objects.requireNonNull;
 
@@ -41,7 +39,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
-import java.util.List;
 import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -52,13 +49,17 @@ import java.util.concurrent.ThreadFactory;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Consumer;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * This class implements a top-level runner for {@link Task}s.
  */
 public final class FloRunner<T> implements Closeable {
 
-  private final Logging logging = new ConsoleLogging();
+  private static final Logger LOG = LoggerFactory.getLogger(FloRunner.class);
+
+  private final Logging logging = Logging.create(LOG);
   private final Collection<Closeable> closeables = new ArrayList<>();
   private final Config config;
 
@@ -134,10 +135,6 @@ public final class FloRunner<T> implements Closeable {
   }
 
   private Future<T> run(Task<T> task) {
-    logging.init();
-
-    closeables.add(logging);
-
     logging.header();
 
     if (isMode("tree")) {
@@ -159,7 +156,7 @@ public final class FloRunner<T> implements Closeable {
       try {
         close();
       } catch (Exception e) {
-        e.printStackTrace();
+        LOG.error("got an exception when closing runner", e);
       }
     });
 
@@ -171,7 +168,7 @@ public final class FloRunner<T> implements Closeable {
       try {
         close();
       } catch (Exception e) {
-        e.printStackTrace();
+        LOG.error("got an exception when closing runner", e);
       }
     });
 
@@ -196,11 +193,13 @@ public final class FloRunner<T> implements Closeable {
         thread.setDaemon(true);
         return thread;
       };
-      final ExecutorService executor = Executors.newFixedThreadPool(workers(), threadFactory);
+      final ExecutorService executor = Executors.newFixedThreadPool(
+          config.getInt("flo.workers"),
+          threadFactory);
       closeables.add(executorCloser(executor));
-      return async(executor);
+      return EvalContext.async(executor);
     } else {
-      return sync();
+      return EvalContext.sync();
     }
   }
 
@@ -234,10 +233,6 @@ public final class FloRunner<T> implements Closeable {
     }
 
     return new PersistingContext(basePath, delegate);
-  }
-
-  private int workers() {
-    return config.getInt("flo.workers");
   }
 
   private boolean isMode(String mode) {
@@ -275,17 +270,18 @@ public final class FloRunner<T> implements Closeable {
 
   @Override
   public void close() throws IOException {
-    List<IOException> ioExceptions = new ArrayList<>();
+    final IOException suppressor = new IOException();
     closeables.forEach(closeable -> {
       try {
         closeable.close();
       } catch (IOException e) {
-        e.printStackTrace();
-        ioExceptions.add(e);
+        LOG.warn("could not close", e);
+        suppressor.addSuppressed(e);
       }
     });
-    if (!ioExceptions.isEmpty()) {
-      throw ioExceptions.get(0);
+
+    if (suppressor.getSuppressed().length > 0) {
+      throw suppressor;
     }
   }
 }
