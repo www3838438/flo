@@ -55,7 +55,7 @@ import org.slf4j.LoggerFactory;
 /**
  * This class implements a top-level runner for {@link Task}s.
  */
-public final class FloRunner<T> implements Closeable {
+public final class FloRunner<T> {
 
   private static final Logger LOG = LoggerFactory.getLogger(FloRunner.class);
 
@@ -102,31 +102,22 @@ public final class FloRunner<T> implements Closeable {
 
     logging.printPlan(TaskInfo.ofTask(task));
 
-    final EvalContext evalContext = createContext();
     final long t0 = System.currentTimeMillis();
-    final EvalContext.Value<T> value = evalContext.evaluate(task);
+    final EvalContext.Value<T> value = createContext().evaluate(task);
     final CompletableFuture<T> future = new CompletableFuture<>();
 
-    value.consume(v -> {
-      future.complete(v);
-      final long elapsed = System.currentTimeMillis() - t0;
-      logging.complete(task.id(), elapsed);
-      try {
-        close();
-      } catch (Exception e) {
-        LOG.error("got an exception when closing runner", e);
-      }
-    });
+    value.consume(future::complete);
+    value.onFail(future::completeExceptionally);
 
-    value.onFail(t -> {
-      future.completeExceptionally(t);
-      final long elapsed = System.currentTimeMillis() - t0;
-      logging.complete(task.id(), elapsed);
-      try {
-        close();
-      } catch (Exception e) {
-        LOG.error("got an exception when closing runner", e);
-      }
+    future.thenRun(() -> {
+      logging.complete(task.id(), System.currentTimeMillis() - t0);
+      closeables.forEach(closeable -> {
+        try {
+          closeable.close();
+        } catch (IOException e) {
+          LOG.warn("could not close", e);
+        }
+      });
     });
 
     return future;
@@ -223,23 +214,6 @@ public final class FloRunner<T> implements Closeable {
       builder.append(ALPHA_NUMERIC_STRING.charAt(character));
     }
     return builder.toString();
-  }
-
-  @Override
-  public void close() throws IOException {
-    final IOException suppressor = new IOException();
-    closeables.forEach(closeable -> {
-      try {
-        closeable.close();
-      } catch (IOException e) {
-        LOG.warn("could not close", e);
-        suppressor.addSuppressed(e);
-      }
-    });
-
-    if (suppressor.getSuppressed().length > 0) {
-      throw suppressor;
-    }
   }
 
   public static class Result<T> {
