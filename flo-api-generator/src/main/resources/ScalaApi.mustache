@@ -14,7 +14,9 @@ trait TaskBuilder0[Z] {
   def process(fn: => Z): Task[Z]
   def processWithContext(fn: EvalContext => Value[Z]): Task[Z]
   def in[A](task: => Task[A]): TaskBuilder1[A, Z]
+  def input[A](task: => Task[A]): TaskBuilder1[A, Z] = in(task)
   def ins[A](tasks: => List[Task[A]]): TaskBuilder1[List[A], Z]
+  def inputs[A](tasks: => List[Task[A]]): TaskBuilder1[List[A], Z] = ins(tasks)
 
   def ->(fn: => Z): Task[Z] = process(fn)
   def └>(fn: => Z): Task[Z] = process(fn)
@@ -50,10 +52,12 @@ trait TaskBuilder{{arity}}[{{typeArgs}}, Z] {
   def context[{{nextArg}}](taskContextStrict: TaskContextStrict[{{nextArg}}, Z]): TaskBuilder{{arityPlus}}[{{typeArgs}}, {{nextArg}}, Z]
 
   def in[{{nextArg}}](task: => Task[{{nextArg}}]): TaskBuilder{{arityPlus}}[{{typeArgs}}, {{nextArg}}, Z]
+  def input[{{nextArg}}](task: => Task[{{nextArg}}]) = in(task)
   def < [{{nextArg}}](task: => Task[{{nextArg}}]) = in(task)
   def ├ [{{nextArg}}](task: => Task[{{nextArg}}]) = in(task)
 
   def ins[{{nextArg}}](tasks: => List[Task[{{nextArg}}]]): TaskBuilder{{arityPlus}}[{{typeArgs}}, List[{{nextArg}}], Z]
+  def inputs[{{nextArg}}](tasks: => List[Task[{{nextArg}}]]) = ins(tasks)
   def << [{{nextArg}}](tasks: => List[Task[{{nextArg}}]]) = ins(tasks)
   def ╞  [{{nextArg}}](tasks: => List[Task[{{nextArg}}]]) = ins(tasks)
   {{/iter.isLast}}

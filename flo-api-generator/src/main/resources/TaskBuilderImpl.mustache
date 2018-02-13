@@ -93,6 +93,11 @@ final class {{implClassName}} {
     }
 
     @Override
+    public <A> {{interfaceName}}1<A, Z> input(Fn<Task<A>> aTask) {
+      return in(aTask);
+    }
+
+    @Override
     public <A> {{interfaceName}}1<List<A>, Z> ins(Fn<List<Task<A>>> aTasks) {
       Fn<List<Task<A>>> aTasksSingleton = Singleton.create(aTasks);
       return new Builder1<>(
@@ -103,6 +108,11 @@ final class {{implClassName}} {
                 .stream().map(ec::evaluate).collect(toValueList(ec));
             return aListValue.map(a -> f1 -> f1.apply(a));
           }));
+    }
+
+    @Override
+    public <A> {{interfaceName}}1<List<A>, Z> inputs(Fn<List<Task<A>>> aTasks) {
+      return ins(aTasks);
     }
   }
 
@@ -189,6 +199,11 @@ final class {{implClassName}} {
     }
 
     @Override
+    public <{{nextArg}}> {{interfaceName}}{{arityPlus}}<{{typeArgs}}, {{nextArg}}, Z> input(Fn<Task<{{nextArg}}>> nextTask) {
+      return in(nextTask);
+    }
+
+    @Override
     public <{{nextArg}}> {{interfaceName}}{{arityPlus}}<{{typeArgs}}, List<{{nextArg}}>, Z> ins(Fn<List<Task<{{nextArg}}>>> nextTasks) {
       Fn<List<Task<{{nextArg}}>>> nextTasksSingleton = Singleton.create(nextTasks);
       return new Builder{{arityPlus}}<>(
@@ -199,6 +214,11 @@ final class {{implClassName}} {
                 .stream().map(ec::evaluate).collect(toValueList(ec));
             return nextValue.map(next -> f{{arityPlus}} -> ({{arguments}}) -> f{{arityPlus}}.apply({{arguments}}, next));
           }));
+    }
+
+    @Override
+    public <{{nextArg}}> {{interfaceName}}{{arityPlus}}<{{typeArgs}}, List<{{nextArg}}>, Z> inputs(Fn<List<Task<{{nextArg}}>>> nextTasks) {
+      return ins(nextTasks);
     }
   }
 {{/genBuilder}}
