@@ -72,66 +72,24 @@ public final class FloRunner<T> implements Closeable {
   }
 
   /**
-   * Run task and return {@link Future} containing the last value or throwable.
+   * Run task and return a {@link Result} containing the last value or throwable.
    * @param task task to run
    * @param config configuration to apply
    * @param <T> type of task
-   * @return a {@link Future} with the value and throwable (if thrown)
+   * @return a {@link Result} with the value and throwable (if thrown)
    */
-  public static <T> Future<T> runTaskAsync(Task<T> task, Config config) {
-    return new FloRunner<T>(config).run(task);
+  public static <T> Result<T> runTask(Task<T> task, Config config) {
+    return new Result<>(new FloRunner<T>(config).run(task));
   }
 
   /**
-   * Run task and return {@link Future} containing the last value or throwable.
+   * Run task and return a {@link Result} containing the last value or throwable.
    * @param task task to run
    * @param <T> type of task
-   * @return a {@link Future} with the value and throwable (if thrown)
+   * @return a {@link Result} with the value and throwable (if thrown)
    */
-  public static <T> Future<T> runTaskAsync(Task<T> task) {
-    return runTaskAsync(task, defaultConfig());
-  }
-
-  /**
-   * Run task, block until done and {@code System.exit()} with an appropriate status code.
-   * @param task task to run
-   * @param <T> type of task
-   */
-  public static <T> void runTaskAndExit(Task<T> task) {
-    runTaskAndExit(task, defaultConfig(), System::exit);
-  }
-
-  /**
-   * Run task, block until done and {@code System.exit()} with an appropriate status code.
-   * @param task task to run
-   * @param config configuration to apply
-   * @param <T> type of task
-   */
-  public static <T> void runTaskAndExit(Task<T> task, Config config) {
-    runTaskAndExit(task, config, System::exit);
-  }
-
-  static <T> void runTaskAndExit(Task<T> task, Consumer<Integer> exiter) {
-    runTaskAndExit(task, defaultConfig(), exiter);
-  }
-
-  private static <T> void runTaskAndExit(Task<T> task, Config config, Consumer<Integer> exiter) {
-    try {
-      runTaskAsync(task, config).get();
-      exiter.accept(0);
-    } catch (ExecutionException e) {
-      final int status;
-      if (e.getCause() instanceof NotReady) {
-        status = 20;
-      } else if (e.getCause() instanceof Persisted) {
-        status = 0;
-      } else {
-        status = 1;
-      }
-      exiter.accept(status);
-    } catch (RuntimeException | InterruptedException e) {
-      exiter.accept(1);
-    }
+  public static <T> Result<T> runTask(Task<T> task) {
+    return runTask(task, defaultConfig());
   }
 
   private Future<T> run(Task<T> task) {
@@ -150,9 +108,9 @@ public final class FloRunner<T> implements Closeable {
     final CompletableFuture<T> future = new CompletableFuture<>();
 
     value.consume(v -> {
+      future.complete(v);
       final long elapsed = System.currentTimeMillis() - t0;
       logging.complete(task.id(), elapsed);
-      future.complete(v);
       try {
         close();
       } catch (Exception e) {
@@ -161,10 +119,9 @@ public final class FloRunner<T> implements Closeable {
     });
 
     value.onFail(t -> {
-      logging.exception(t);
+      future.completeExceptionally(t);
       final long elapsed = System.currentTimeMillis() - t0;
       logging.complete(task.id(), elapsed);
-      future.completeExceptionally(t);
       try {
         close();
       } catch (Exception e) {
@@ -282,6 +239,48 @@ public final class FloRunner<T> implements Closeable {
 
     if (suppressor.getSuppressed().length > 0) {
       throw suppressor;
+    }
+  }
+
+  public static class Result<T> {
+    private final Future<T> future;
+
+    Result(Future<T> future) {
+      this.future = future;
+    }
+
+    public Future<T> future() {
+      return future;
+    }
+
+    /*
+     * Wait until done and {@code System.exit()} with an appropriate status code.
+     */
+    public void waitAndExit() {
+      waitAndExit(System::exit);
+    }
+
+    public T value() throws ExecutionException, InterruptedException {
+      return future.get();
+    }
+
+    void waitAndExit(Consumer<Integer> exiter) {
+      try {
+        future.get();
+        exiter.accept(0);
+      } catch (ExecutionException e) {
+        final int status;
+        if (e.getCause() instanceof NotReady) {
+          status = 20;
+        } else if (e.getCause() instanceof Persisted) {
+          status = 0;
+        } else {
+          status = 1;
+        }
+        exiter.accept(status);
+      } catch (RuntimeException | InterruptedException e) {
+        exiter.accept(1);
+      }
     }
   }
 }

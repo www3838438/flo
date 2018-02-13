@@ -49,7 +49,7 @@ object MyWorkflow {
   def main(args: Array[String]): Unit = {
     val task = exampleTask("world")
 
-    FloRunner.runTaskAndExit(task)
+    FloRunner.runTask(task).waitAndExit()
   }
 }
 ```
