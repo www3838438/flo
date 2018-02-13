@@ -48,7 +48,11 @@ class ConsoleLogging implements Logging {
   public void close() throws IOException {
     // jansi seems to work better without install/uninstall :/
     // AnsiConsole.systemUninstall();
-    // TODO: find out what the print below does
+
+    // print ANSI escape sequence to show the cursor if for some reason hidden
+    // \u001B[ -> Control Sequence Introducer
+    // ?25h    -> DECTCEM Shows the cursor
+    // https://en.wikipedia.org/wiki/ANSI_escape_code#CSI_sequences
     AnsiConsole.out.print(ansi().a("\u001B[?25h"));
     AnsiConsole.out.flush();
   }
