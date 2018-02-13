@@ -41,6 +41,7 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.List;
 import java.util.ServiceLoader;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
@@ -55,7 +56,7 @@ import java.util.function.Consumer;
 /**
  * This class implements a top-level runner for {@link Task}s.
  */
-public final class FloRunner<T> implements AutoCloseable {
+public final class FloRunner<T> implements Closeable {
 
   private final Logging logging = new ConsoleLogging();
   private final Collection<Closeable> closeables = new ArrayList<>();
@@ -65,28 +66,74 @@ public final class FloRunner<T> implements AutoCloseable {
     this.config = requireNonNull(config);
   }
 
+  private static Config defaultConfig() {
+    return ConfigFactory.load("flo");
+  }
+
   /**
-   * Run task and return {@link Result} containing the last value or throwable.
+   * Run task and return {@link Future} containing the last value or throwable.
    * @param task task to run
    * @param config configuration to apply
    * @param <T> type of task
-   * @return a {@link Result} with the value and throwable (if thrown)
+   * @return a {@link Future} with the value and throwable (if thrown)
    */
-  public static <T> Result<T> runTask(Task<T> task, Config config) {
+  public static <T> Future<T> runTaskAsync(Task<T> task, Config config) {
     return new FloRunner<T>(config).run(task);
   }
 
   /**
-   * Run task and return {@link Result} containing the last value or throwable.
+   * Run task and return {@link Future} containing the last value or throwable.
    * @param task task to run
    * @param <T> type of task
-   * @return a {@link Result} with the value and throwable (if thrown)
+   * @return a {@link Future} with the value and throwable (if thrown)
    */
-  public static <T> Result<T> runTask(Task<T> task) {
-    return runTask(task, ConfigFactory.load("flo"));
+  public static <T> Future<T> runTaskAsync(Task<T> task) {
+    return runTaskAsync(task, defaultConfig());
   }
 
-  private Result<T> run(Task<T> task) {
+  /**
+   * Run task, block until done and {@code System.exit()} with an appropriate status code.
+   * @param task task to run
+   * @param <T> type of task
+   */
+  public static <T> void runTaskAndExit(Task<T> task) {
+    runTaskAndExit(task, defaultConfig(), System::exit);
+  }
+
+  /**
+   * Run task, block until done and {@code System.exit()} with an appropriate status code.
+   * @param task task to run
+   * @param config configuration to apply
+   * @param <T> type of task
+   */
+  public static <T> void runTaskAndExit(Task<T> task, Config config) {
+    runTaskAndExit(task, config, System::exit);
+  }
+
+  static <T> void runTaskAndExit(Task<T> task, Consumer<Integer> exiter) {
+    runTaskAndExit(task, defaultConfig(), exiter);
+  }
+
+  private static <T> void runTaskAndExit(Task<T> task, Config config, Consumer<Integer> exiter) {
+    try {
+      runTaskAsync(task, config).get();
+      exiter.accept(0);
+    } catch (ExecutionException e) {
+      final int status;
+      if (e.getCause() instanceof NotReady) {
+        status = 20;
+      } else if (e.getCause() instanceof Persisted) {
+        status = 0;
+      } else {
+        status = 1;
+      }
+      exiter.accept(status);
+    } catch (RuntimeException | InterruptedException e) {
+      exiter.accept(1);
+    }
+  }
+
+  private Future<T> run(Task<T> task) {
     logging.init();
 
     closeables.add(logging);
@@ -95,7 +142,7 @@ public final class FloRunner<T> implements AutoCloseable {
 
     if (isMode("tree")) {
       logging.tree(TaskInfo.ofTask(task));
-      return new Result<>(CompletableFuture.completedFuture(null));
+      return CompletableFuture.completedFuture(null);
     }
 
     logging.printPlan(TaskInfo.ofTask(task));
@@ -128,7 +175,7 @@ public final class FloRunner<T> implements AutoCloseable {
       }
     });
 
-    return new Result<>(future);
+    return future;
   }
 
   private EvalContext createContext() {
@@ -227,51 +274,18 @@ public final class FloRunner<T> implements AutoCloseable {
   }
 
   @Override
-  public void close() throws Exception {
+  public void close() throws IOException {
+    List<IOException> ioExceptions = new ArrayList<>();
     closeables.forEach(closeable -> {
       try {
         closeable.close();
       } catch (IOException e) {
         e.printStackTrace();
+        ioExceptions.add(e);
       }
     });
-  }
-
-  public static class Result<T> {
-    private Future<T> future;
-
-    private Result(Future<T> future) {
-      this.future = future;
-    }
-
-    public Future<T> future() {
-      return future;
-    }
-
-    /**
-     * Block until done and {@code System.exit()} with an appropriate status code.
-     */
-    public void blockAndExit() {
-      blockAndExit(System::exit);
-    }
-
-    void blockAndExit(Consumer<Integer> exiter) {
-      try {
-        future.get();
-        exiter.accept(0);
-      } catch (ExecutionException e) {
-        final int status;
-        if (e.getCause() instanceof NotReady) {
-          status = 20;
-        } else if (e.getCause() instanceof Persisted) {
-          status = 0;
-        } else {
-          status = 1;
-        }
-        exiter.accept(status);
-      } catch (RuntimeException | InterruptedException e) {
-        exiter.accept(1);
-      }
+    if (!ioExceptions.isEmpty()) {
+      throw ioExceptions.get(0);
     }
   }
 }

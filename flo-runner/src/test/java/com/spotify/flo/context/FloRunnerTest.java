@@ -20,7 +20,8 @@
 
 package com.spotify.flo.context;
 
-import static com.spotify.flo.context.FloRunner.runTask;
+import static com.spotify.flo.context.FloRunner.runTaskAndExit;
+import static com.spotify.flo.context.FloRunner.runTaskAsync;
 import static org.hamcrest.CoreMatchers.is;
 import static org.junit.Assert.assertThat;
 import static org.junit.Assert.fail;
@@ -30,13 +31,14 @@ import com.spotify.flo.status.NotReady;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import org.junit.Test;
 
 public class FloRunnerTest {
 
   private static final Task<String> NOT_READY = Task.named("notReady").ofType(String.class)
-      .process(() -> { throw new NotReady(); });
+      .process(() -> {
+        throw new NotReady();
+      });
 
   @Test
   public void nonBlockingRunnerDoesNotBlock() {
@@ -52,7 +54,7 @@ public class FloRunnerTest {
           return "foo";
         });
 
-    runTask(foo);
+    runTaskAsync(foo);
 
     assertThat(future.isDone(), is(false));
   }
@@ -71,7 +73,7 @@ public class FloRunnerTest {
           return "foo";
         });
 
-    runTask(foo).blockAndExit((status) -> { });
+    runTaskAndExit(foo, status -> { });
 
     assertThat(future.isDone(), is(true));
   }
@@ -81,7 +83,7 @@ public class FloRunnerTest {
     final Task<String> foo = Task.named("foo").ofType(String.class)
         .process(() -> "foo");
 
-    final String result = runTask(foo).future().get(1, TimeUnit.SECONDS);
+    final String result = runTaskAsync(foo).get(1, TimeUnit.SECONDS);
 
     assertThat(result, is("foo"));
   }
@@ -95,15 +97,15 @@ public class FloRunnerTest {
         .in(() -> bar)
         .process((b) -> "foo" + b);
 
-    final String result = runTask(foo).future().get(1, TimeUnit.SECONDS);
+    final String result = runTaskAsync(foo).get(1, TimeUnit.SECONDS);
 
     assertThat(result, is("foobar"));
   }
 
   @Test
-  public void exceptionsArePassed() throws InterruptedException, TimeoutException {
+  public void exceptionsArePassed() throws Exception {
     try {
-      runTask(NOT_READY).future().get(1, TimeUnit.SECONDS);
+      runTaskAsync(NOT_READY).get(1, TimeUnit.SECONDS);
       fail();
     } catch (ExecutionException e) {
       assert e.getCause() instanceof NotReady;
@@ -111,13 +113,13 @@ public class FloRunnerTest {
   }
 
   @Test
-  public void exceptionsArePassedThroughDag() throws InterruptedException, TimeoutException {
+  public void exceptionsArePassedThroughDag() throws Exception {
     final Task<String> foo = Task.named("foo").ofType(String.class)
         .in(() -> NOT_READY)
         .process((b) -> "foo" + b);
 
     try {
-      runTask(foo).future().get(1, TimeUnit.SECONDS);
+      runTaskAsync(foo).get(1, TimeUnit.SECONDS);
       fail();
     } catch (ExecutionException e) {
       assert e.getCause() instanceof NotReady;
@@ -125,11 +127,18 @@ public class FloRunnerTest {
   }
 
   @Test
-  public void exceptionsExitNonZero() {
+  public void exceptionsExitNonZero() throws Exception {
     final Task<String> throwingTask = Task.named("throwingTask").ofType(String.class)
         .process(() -> {
-          throw new RuntimeException("expected exception is expected");
+          throw new RuntimeException("this task should throw");
         });
-    runTask(throwingTask).blockAndExit((status) -> assertThat(status, is(1)));
+
+    final CompletableFuture<Integer> future = new CompletableFuture<>();
+
+    runTaskAndExit(throwingTask, future::complete);
+
+    final int status = future.get(1, TimeUnit.SECONDS);
+
+    assertThat(status, is(1));
   }
 }
